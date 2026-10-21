@@ -71,7 +71,8 @@ pio check -e c3-debug                      # Static analysis (clang-tidy)
 ```
 
 Verify firmware changes: `pio run -e c3-debug` + `./scripts/check_format.py` +
-`pio check -e c3-debug` with zero defects.
+`pio check -e c3-debug` with zero defects. Also run `pio run -e c6-debug`, which
+builds against Arduino core 3.x (see Hardware).
 
 Verify frontend changes: `npm run check` + `npm run build` in `frontend/`.
 
