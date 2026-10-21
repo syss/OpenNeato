@@ -97,6 +97,11 @@ The default TX/RX GPIOs depend on the board and firmware target, but are fully c
 the web UI in **Settings -> Device -> UART Pins**. Wire whichever GPIOs are convenient and update
 the setting to match.
 
+> [!NOTE]
+> ESP32-C6 support is new and has not yet been verified on real hardware. Its firmware defaults to
+> TX on GPIO22 and RX on GPIO23. It also uses a different partition layout from the other chips
+> (larger firmware slots, 512 KB instead of 768 KB of storage for logs and cleaning history).
+
 ### Wiring
 
 Connect the four JST XH wires between the robot's debug port and the ESP32.
@@ -201,7 +206,7 @@ tool refuses to flash.
 | Flag          | Default       | Description                                             |
 |---------------|---------------|---------------------------------------------------------|
 | `-port`       | auto-detected | Serial port path (e.g. `/dev/ttyUSB0`, `COM3`)          |
-| `-chip`       | auto-detected | Chip type (e.g. `esp32-c3`, `esp32-s3`)                 |
+| `-chip`       | auto-detected | Chip type (e.g. `esp32-c3`, `esp32-s3`, `esp32-c6`)     |
 | `-firmware`   | —             | Path to a local `.tar.gz` firmware pack; skips download |
 | `-list`       | `false`       | List available serial ports and exit                    |
 | `-no-monitor` | `false`       | Skip the serial monitor after flashing                  |
@@ -237,7 +242,7 @@ files, offsets, baud rate, compression, and reset behavior as `openneato-flash`.
    ```
 
    Look for a line like `Detecting chip type... ESP32-C3`, then use the lowercase chip name in
-   the firmware filename: `esp32-c3`, `esp32-s3`, or `esp32`.
+   the firmware filename: `esp32-c3`, `esp32-s3`, `esp32-c6`, or `esp32`.
 
 4. Download the full firmware pack and `checksums.txt` from the
    [OpenNeato Releases](https://github.com/renjfk/OpenNeato/releases) page.
@@ -589,8 +594,8 @@ that wipes every session in one go and restores the list view.
 Two ways to factory reset:
 
 1. **From the web UI**: Settings -> Device -> Factory Reset. Type `RESET` to confirm.
-2. **Hardware button**: Hold the BOOT button for 5 seconds (GPIO9 on ESP32-C3, GPIO0 on
-   ESP32-S3 and original ESP32). The ESP32 will erase all settings and restart.
+2. **Hardware button**: Hold the BOOT button for 5 seconds (GPIO9 on ESP32-C3 and ESP32-C6,
+   GPIO0 on ESP32-S3 and original ESP32). The ESP32 will erase all settings and restart.
 
 > [!CAUTION]
 > Both methods erase everything — WiFi credentials, settings, logs, and cleaning history.

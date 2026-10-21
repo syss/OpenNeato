@@ -83,7 +83,7 @@ Neato Botvac D3 through D7. D8/D9/D10 are NOT supported (different board, passwo
 
 ### Requirements
 
-- ESP32-C3, ESP32-S3, or original ESP32 board with **4 MB flash** (any dev board with USB and exposed GPIOs)
+- ESP32-C3, ESP32-S3, ESP32-C6, or original ESP32 board with **4 MB flash** (any dev board with USB and exposed GPIOs)
 
 ### Quick Start
 
