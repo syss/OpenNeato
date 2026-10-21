@@ -16,9 +16,13 @@ bool FirmwareManager::validateChip(uint8_t *data, size_t len) {
         uint8_t headerId; // ESP_CHIP_ID_* from image header byte 12
         uint8_t model; // esp_chip_model_t value
     };
-    // C6 uses the raw model value: CHIP_ESP32C6 only exists in ESP-IDF 5+.
     static const ChipMap kChipMap[] = {
-            {0x00, CHIP_ESP32}, {0x02, CHIP_ESP32S2}, {0x05, CHIP_ESP32C3}, {0x09, CHIP_ESP32S3}, {0x0D, 13},
+            {0x00, CHIP_ESP32},
+            {0x02, CHIP_ESP32S2},
+            {0x05, CHIP_ESP32C3},
+            {0x09, CHIP_ESP32S3},
+            // C6 uses the raw model value: CHIP_ESP32C6 only exists in ESP-IDF 5+
+            {0x0D, 13},
     };
     auto binChipId = static_cast<uint8_t>(data[12]);
     const ChipMap *match = nullptr;
