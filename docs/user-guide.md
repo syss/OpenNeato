@@ -98,9 +98,23 @@ the web UI in **Settings -> Device -> UART Pins**. Wire whichever GPIOs are conv
 the setting to match.
 
 > [!NOTE]
-> ESP32-C6 support is new and has not yet been verified on real hardware. Its firmware defaults to
-> TX on GPIO22 and RX on GPIO23. It also uses a different partition layout from the other chips
-> (larger firmware slots, 512 KB instead of 768 KB of storage for logs and cleaning history).
+> ESP32-C6 support includes 4 MB Super Mini boards, including the
+> [ESP32-C6FH4 Super Mini sold by SEMAF](https://electronics.semaf.at/esp32-c6-supermini).
+> Use the existing `c6-debug`, `c6-ota`, or `c6-release` targets: they reuse the
+> `esp32-c6-devkitc-1` board definition with flash explicitly limited to 4 MB.
+> A DevKitC board ID in the build output does not mean that an 8 MB board is required.
+>
+> Defaults are BOOT/factory reset on GPIO9, robot TX on GPIO22, and robot RX on GPIO23.
+> UART pins remain configurable in **Settings -> Device -> UART Pins**; previously saved
+> values take precedence over firmware defaults. Check your board's actual pin labels.
+> GPIO12/13 are reserved for native USB.
+>
+> On an ESP32-C6FH4 Super Mini, USB flashing, startup, fallback WiFi, and WiFi client
+> access to the web UI have been verified. Robot communication and cleaning, OTA/rollback,
+> and factory reset have not yet been verified on this board.
+> The C6 uses a different partition layout from the other chips (1728 KB OTA slots and
+> 512 KB storage for logs/history). Install the full pack over USB when changing partition
+> layouts: an application-only OTA update does not replace the partition table.
 
 ### Wiring
 
