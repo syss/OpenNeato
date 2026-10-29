@@ -6,19 +6,22 @@
 #include "settings_manager.h"
 #include "firmware_manager.h"
 #include "manual_clean_manager.h"
+#include "navigation_manager.h"
 #include "notification_manager.h"
 #include "cleaning_history.h"
 #include "wifi_manager.h"
 #include "scheduler.h"
 #include <SPIFFS.h>
+#include <new>
 
 unsigned long WebServer::lastApiActivity = 0;
 
 WebServer::WebServer(AsyncWebServer& server, NeatoSerial& neato, DataLogger& logger, SystemManager& sys,
                      FirmwareManager& fw, SettingsManager& settings, ManualCleanManager& manual,
-                     NotificationManager& notif, CleaningHistory& history, WiFiManager& wifi, Scheduler& scheduler) :
+                     NotificationManager& notif, CleaningHistory& history, WiFiManager& wifi, Scheduler& scheduler,
+                     NavigationManager& navigation) :
     server(server), neato(neato), logger(logger), sysMgr(sys), fwMgr(fw), settingsMgr(settings), manualMgr(manual),
-    notifMgr(notif), historyMgr(history), wifiMgr(wifi), scheduler(scheduler) {}
+    notifMgr(notif), historyMgr(history), wifiMgr(wifi), scheduler(scheduler), navigation(navigation) {}
 
 void WebServer::loggedRoute(const char *path, WebRequestMethodComposite httpMethod, SyncHandler handler) {
     server.on(path, httpMethod, [this, handler](AsyncWebServerRequest *request) {
@@ -33,6 +36,10 @@ void WebServer::loggedBodyRoute(const char *path, WebRequestMethodComposite http
     server.on(
             path, httpMethod, [](AsyncWebServerRequest *request) { /* handled in body callback */ }, nullptr,
             [this, handler](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t, size_t) {
+                if (navigation.isBusy()) {
+                    sendError(request, 409, "navigation active; stop it before changing settings");
+                    return;
+                }
                 lastApiActivity = millis();
                 unsigned long startMs = lastApiActivity;
                 int status = handler(request, data, len);
@@ -56,6 +63,13 @@ void WebServer::sendOk(AsyncWebServerRequest *request) {
 }
 
 void WebServer::begin() {
+    server.addMiddleware([this](AsyncWebServerRequest *request, ArMiddlewareNext next) {
+        if (request->method() != HTTP_GET && navigation.isBusy() && request->url() != "/api/navigate/stop") {
+            sendError(request, 409, "navigation active; stop it before sending other commands");
+            return;
+        }
+        next();
+    });
     // Register all embedded frontend assets from the auto-generated registry
     for (size_t i = 0; i < WEB_ASSETS_COUNT; i++) {
         const WebAsset& asset = WEB_ASSETS[i];
@@ -68,6 +82,7 @@ void WebServer::begin() {
 
     registerApiRoutes();
     registerManualRoutes();
+    registerNavigationRoutes();
     registerLogRoutes();
     registerSystemRoutes();
     registerSettingsRoutes();
@@ -158,6 +173,58 @@ void WebServer::registerManualRoutes() {
     registerPostRoute("/api/manual", manualMgr, &ManualCleanManager::enable, {"enable"});
 
     LOG("WEB", "Manual clean routes registered");
+}
+
+void WebServer::registerNavigationRoutes() {
+    registerGetRoute("/api/navigate/status", navigation, &NavigationManager::getStatusJson);
+    registerPostRoute("/api/navigate/stop", navigation, &NavigationManager::stop);
+    server.on(
+            "/api/navigate", HTTP_POST,
+            [this](AsyncWebServerRequest *request) {
+                int status = 400;
+                const char *error = "invalid or incomplete waypoint array";
+                auto *body = static_cast<NavigationBody *>(request->_tempObject);
+                if (request->url() != "/api/navigate") {
+                    status = 404;
+                    error = "unknown navigation endpoint";
+                } else if (!OPENNEATO_EXPERIMENTAL_NAVIGATION) {
+                    status = 501;
+                    error = "navigation requires an experimental build";
+                } else if (request->contentLength() > NavigationRoute::MAX_BODY) {
+                    status = 413;
+                    error = "waypoint body exceeds 4096 bytes";
+                } else if (request->contentType() != "application/json" &&
+                           !request->contentType().startsWith("application/json;")) {
+                    status = 415;
+                    error = "expected application/json";
+                } else if (fwMgr.isInProgress() || historyMgr.isImporting()) {
+                    status = 409;
+                    error = "upload in progress";
+                } else if (body && body->complete()) {
+                    status = navigation.start(body->data);
+                    if (status == 409)
+                        error = "navigation busy";
+                }
+                logger.logRequest(HTTP_POST, "/api/navigate", status, 0);
+                if (status == 202)
+                    request->send(202, "application/json", "{\"ok\":true}");
+                else
+                    sendError(request, status, error);
+            },
+            nullptr,
+            [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+                if (!OPENNEATO_EXPERIMENTAL_NAVIGATION || total == 0 || total > NavigationRoute::MAX_BODY)
+                    return;
+                if (index == 0 && !request->_tempObject) {
+                    // The request destructor frees _tempObject, including on disconnected/incomplete uploads.
+                    void *memory = malloc(sizeof(NavigationBody));
+                    if (memory)
+                        request->_tempObject = new (memory) NavigationBody;
+                }
+                auto *body = static_cast<NavigationBody *>(request->_tempObject);
+                if (body)
+                    body->append(reinterpret_cast<const char *>(data), len, index, total);
+            });
 }
 
 // -- Log file endpoints ------------------------------------------------------
@@ -351,6 +418,10 @@ void WebServer::registerFirmwareRoutes() {
             // Upload handler (called per chunk)
             [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len,
                    bool final) {
+                if (navigation.isBusy()) {
+                    sendError(request, 409, "stop navigation before uploading firmware");
+                    return;
+                }
                 // First chunk: initialize update session
                 if (!index) {
                     String md5 = request->hasParam("hash") ? request->getParam("hash")->value() : "";
@@ -480,6 +551,10 @@ void WebServer::registerMapRoutes() {
             // Upload handler (called per chunk)
             [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len,
                    bool final) {
+                if (navigation.isBusy()) {
+                    sendError(request, 409, "stop navigation before importing history");
+                    return;
+                }
                 // First chunk: initialize import session
                 if (!index) {
                     if (!historyMgr.beginImport(filename)) {

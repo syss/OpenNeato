@@ -535,6 +535,11 @@ void NeatoSerial::invalidateAll() {
 // -- Action command convenience methods --------------------------------------
 
 bool NeatoSerial::clean(const String& action, std::function<void(bool)> callback) {
+    if (navigationActive.load()) {
+        if (callback)
+            callback(false);
+        return false;
+    }
     // All cleaning control uses SetEvent — the authenticated event API that D3-D7
     // robots use for their cloud/app protocol. This correctly transitions the UI
     // state machine and preserves map/localization during pause/resume.
@@ -620,6 +625,11 @@ bool NeatoSerial::setMotorWheels(int leftMM, int rightMM, int speedMMs, std::fun
         return enqueue(
                 String(CMD_SET_MOTOR) + " LWheelDisable RWheelDisable",
                 [this, callback](bool ok, const String&) {
+                    if (!ok) {
+                        if (callback)
+                            callback(false);
+                        return;
+                    }
                     // Re-enable wheels so subsequent move commands work
                     enqueue(String(CMD_SET_MOTOR) + " LWheelEnable RWheelEnable", wrapAction(callback),
                             PRIORITY_CRITICAL);
@@ -704,6 +714,11 @@ bool NeatoSerial::setNavigationMode(const String& mode, std::function<void(bool)
 // -- Power control -----------------------------------------------------------
 
 bool NeatoSerial::powerControl(const String& action, std::function<void(bool)> callback) {
+    if (navigationActive.load()) {
+        if (callback)
+            callback(false);
+        return false;
+    }
     const char *cmd;
     if (action == "restart") {
         cmd = CMD_SET_SYSTEM_MODE_POWER_CYCLE;
@@ -764,6 +779,11 @@ bool NeatoSerial::newBattery(std::function<void(bool)> callback) {
 }
 
 bool NeatoSerial::sendRaw(const String& cmd, std::function<void(bool, const String&)> callback) {
+    if (navigationActive.load()) {
+        if (callback)
+            callback(false, "navigation active");
+        return false;
+    }
     if (cmd.isEmpty())
         return false;
     return enqueue(cmd, callback);

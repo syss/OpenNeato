@@ -16,6 +16,8 @@ tags:
     description: Control commands sent to the robot
   - name: Manual
     description: Manual cleaning mode (joystick, motors)
+  - name: Navigation
+    description: Experimental supervised waypoint following (disabled in ordinary builds)
   - name: Logs
     description: Diagnostic log files stored in flash
   - name: WiFi
@@ -402,6 +404,68 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Ok"
+  /api/navigate/status:
+    get:
+      tags: [Navigation]
+      summary: Read waypoint navigation status without querying the robot
+      responses:
+        "200":
+          description: Current run (also available in ordinary builds)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NavigationStatus"
+  /api/navigate/stop:
+    post:
+      tags: [Navigation]
+      summary: Request cancellation or retry failed cleanup
+      description: Idempotent. Poll status until terminal and cleanupRequired is false. This does not return to dock.
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+  /api/navigate:
+    post:
+      tags: [Navigation]
+      summary: Submit an experimental waypoint run
+      description: |
+        Requires OPENNEATO_EXPERIMENTAL_NAVIGATION=1. The body is limited to 4096 bytes.
+        The robot must be idle, off the dock, have at least 20 percent battery, and be
+        within 0.25 metres of the first waypoint in the same coordinate frame.
+        Consecutive points must be at most 2 metres apart; total path length at most 20 metres.
+        Arrival requires position within 0.05 metres and heading within 5 degrees.
+        Acceptance is asynchronous: poll status for startup failures and completion.
+        While a run or its cleanup owns control, other mutating HTTP requests return 409.
+        No obstacle avoidance, cliff guarantee, no-go enforcement, docking, or recharge/resume.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 32
+              items:
+                $ref: "#/components/schemas/NavigationPoint"
+      responses:
+        "202":
+          description: Accepted for startup checks (not evidence that the robot moved)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "400":
+          description: Invalid or incomplete waypoint array
+        "409":
+          description: Navigation or an upload is already in progress
+        "413":
+          description: Body exceeds 4096 bytes
+        "415":
+          description: Expected application/json
+        "501":
+          description: Navigation disabled in this build
   /api/manual/status:
     get:
       tags:
@@ -1276,6 +1340,61 @@ components:
         - filterChange
         - brushChange
         - dirtBin
+    NavigationPoint:
+      type: object
+      additionalProperties: false
+      required: [x, y, t]
+      properties:
+        x:
+          type: number
+          minimum: -100
+          maximum: 100
+          description: X position in metres
+        y:
+          type: number
+          minimum: -100
+          maximum: 100
+          description: Y position in metres
+        t:
+          type: number
+          minimum: -360
+          maximum: 360
+          description: Heading in degrees (counter-clockwise)
+    NavigationStatus:
+      type: object
+      required: [enabled, state, reason, waypoint, count, poseValid, x, y, t, cleanupRequired]
+      properties:
+        enabled:
+          type: boolean
+        state:
+          type: string
+          enum: [idle, starting, running, stopping, done, cancelled, error]
+        reason:
+          type: string
+          description: Machine-readable failure reason, empty for success/cancellation
+        waypoint:
+          type: integer
+          minimum: 0
+          description: Zero-based target index; equals count on completion
+        count:
+          type: integer
+          minimum: 0
+          maximum: 32
+        poseValid:
+          type: boolean
+          description: Whether a valid position has been received for this run
+        x:
+          type: number
+          description: Last valid X in metres (zero until poseValid)
+        y:
+          type: number
+          description: Last valid Y in metres (zero until poseValid)
+        t:
+          type: number
+          description: Last valid heading in degrees (zero until poseValid)
+        cleanupRequired:
+          type: boolean
+          description: Control remains locked until cleanup succeeds; stop retries cleanup after an error
     ManualStatus:
       type: object
       properties:

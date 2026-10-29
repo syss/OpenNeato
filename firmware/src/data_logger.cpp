@@ -494,6 +494,12 @@ void DataLogger::logGenericEvent(const String& category, const std::vector<Field
     logEvent("event", fields);
 }
 
+void DataLogger::logNavigation(const char *state, const char *reason, size_t waypoint) {
+    logGenericEvent("navigation", {{"state", state, FIELD_STRING},
+                                   {"reason", reason, FIELD_STRING},
+                                   {"waypoint", String(static_cast<unsigned>(waypoint)), FIELD_INT}});
+}
+
 void DataLogger::logNotification(const String& category, const String& message, bool success) {
     logEvent("event", {{"category", category, FIELD_STRING},
                        {"msg", message, FIELD_STRING},

@@ -461,7 +461,21 @@ bool parseBatteryWarrantyData(const String& raw, BatteryWarrantyData& out) {
     return found;
 }
 
+static bool navigationValueValid(const String& raw, const char *key, int maximum) {
+    String value;
+    if (!findCsvValue(raw, key, value) || value.isEmpty() || value.length() > 3)
+        return false;
+    for (unsigned int i = 0; i < value.length(); ++i) {
+        if (value.charAt(i) < '0' || value.charAt(i) > '9')
+            return false;
+    }
+    return value.toInt() <= maximum;
+}
+
 bool parseChargerData(const String& raw, ChargerData& out) {
+    out.navigationValid = navigationValueValid(raw, "FuelPercent", 100) &&
+                          navigationValueValid(raw, "ExtPwrPresent", 1) &&
+                          navigationValueValid(raw, "ChargingActive", 1);
     String val;
     if (findCsvValue(raw, "FuelPercent", val))
         out.fuelPercent = val.toInt();
@@ -493,6 +507,12 @@ bool parseChargerData(const String& raw, ChargerData& out) {
 }
 
 bool parseDigitalSensorData(const String& raw, DigitalSensorData& out) {
+    out.navigationValid = true;
+    for (const char *key: {"SNSR_LEFT_WHEEL_EXTENDED", "SNSR_RIGHT_WHEEL_EXTENDED", "LSIDEBIT", "LFRONTBIT", "LLDSBIT",
+                           "RSIDEBIT", "RFRONTBIT", "RLDSBIT"}) {
+        if (!navigationValueValid(raw, key, 1))
+            out.navigationValid = false;
+    }
     String val;
     bool found = false;
     if (findCsvValue(raw, "SNSR_DC_JACK_IS_IN", val) || findCsvValue(raw, "SNSR_DC_JACK_CONNECT", val)) {
@@ -521,6 +541,8 @@ bool parseDigitalSensorData(const String& raw, DigitalSensorData& out) {
 }
 
 bool parseMotorData(const String& raw, MotorData& out) {
+    out.navigationValid =
+            navigationValueValid(raw, "LeftWheel_Load%", 100) && navigationValueValid(raw, "RightWheel_Load%", 100);
     String val;
     bool found = false;
     if (findCsvValue(raw, "Brush_RPM", val)) {

@@ -9,18 +9,24 @@ ManualCleanManager::ManualCleanManager(NeatoSerial& serial) : LoopTask(0), seria
 
 bool ManualCleanManager::enable(bool doEnable, std::function<void(bool)> callback) {
     if (doEnable) {
-        if (active || enabling) {
+        if (active || enabling || disabling) {
             if (callback)
                 callback(false);
             return false;
         }
 
+        uint32_t transition = ++transitionId;
         enabling = true;
         enablingStartMs = millis();
         LOG("MANUAL", "Enabling manual mode...");
 
         // Step 1: Enter TestMode
-        serial.testMode(true, [this, callback](bool ok) {
+        serial.testMode(true, [this, callback, transition](bool ok) {
+            if (transition != transitionId) {
+                if (callback)
+                    callback(false);
+                return;
+            }
             if (!ok) {
                 LOG("MANUAL", "TestMode On failed");
                 enabling = false;
@@ -30,7 +36,12 @@ bool ManualCleanManager::enable(bool doEnable, std::function<void(bool)> callbac
             }
 
             // Step 2: Start LDS rotation
-            serial.setLdsRotation(true, [this, callback](bool ok) {
+            serial.setLdsRotation(true, [this, callback, transition](bool ok) {
+                if (transition != transitionId) {
+                    if (callback)
+                        callback(false);
+                    return;
+                }
                 if (!ok) {
                     LOG("MANUAL", "SetLDSRotation On failed, reverting TestMode");
                     serial.testMode(false, nullptr);
@@ -44,6 +55,8 @@ bool ManualCleanManager::enable(bool doEnable, std::function<void(bool)> callbac
                 enabling = false;
                 active = true;
                 serial.setManualCleanActive(true);
+                safetyKnown = false;
+                navigationFault = false;
                 safetyTicker.reset(); // Force immediate first poll
                 stallTicker.reset();
                 watchdogStopped = false;
@@ -71,30 +84,34 @@ bool ManualCleanManager::enable(bool doEnable, std::function<void(bool)> callbac
             });
         });
     } else {
-        if (!active || disabling) {
+        if ((!active && !enabling) || disabling) {
             if (callback)
                 callback(false);
             return false;
         }
 
+        ++transitionId;
+        enabling = false;
         disabling = true;
         LOG("MANUAL", "Disabling manual mode...");
 
         // Step 1: Stop wheels immediately
-        serial.setMotorWheels(0, 0, 0, [this, callback](bool) {
+        serial.setMotorWheels(0, 0, 0, [this, callback](bool stopped) {
             // Step 2: Turn off cleaning motors (best-effort, don't block on failure)
             stopAllMotors();
 
             // Step 3: Stop LDS rotation
-            serial.setLdsRotation(false, [this, callback](bool) {
+            serial.setLdsRotation(false, [this, callback, stopped](bool ldsOff) {
                 // Step 4: Exit TestMode
-                serial.testMode(false, [this, callback](bool ok) {
+                serial.testMode(false, [this, callback, stopped, ldsOff](bool ok) {
                     LOG("MANUAL", "Manual mode disabled (%s)", ok ? "clean" : "TestMode Off failed");
-                    active = false;
-                    serial.setManualCleanActive(false);
+                    bool clean = stopped && ldsOff && ok;
+                    active = !clean;
+                    serial.setManualCleanActive(active);
                     disabling = false;
+                    navigationControlled = false;
                     if (callback)
-                        callback(ok);
+                        callback(clean);
                 });
             });
         });
@@ -106,7 +123,7 @@ bool ManualCleanManager::enable(bool doEnable, std::function<void(bool)> callbac
 // -- Movement with safety check ----------------------------------------------
 
 bool ManualCleanManager::move(int leftMM, int rightMM, int speedMMs, std::function<void(bool)> callback) {
-    if (!active)
+    if (!active || disabling)
         return false;
 
     // Zero move = explicit stop, always allowed (priority so it jumps the queue)
@@ -134,17 +151,17 @@ bool ManualCleanManager::move(int leftMM, int rightMM, int speedMMs, std::functi
         // New movement — reset stall tracking
         wheelsMoving = true;
         stallCount = 0;
+        motorUpdatedMs = millis(); // First load response must arrive within the freshness window.
     }
 
     // setMotorWheels internally enqueues at CRITICAL priority
-    serial.setMotorWheels(leftMM, rightMM, speedMMs, callback);
-    return true;
+    return serial.setMotorWheels(leftMM, rightMM, speedMMs, callback);
 }
 
 // -- Motor control -----------------------------------------------------------
 
 bool ManualCleanManager::setMotors(bool brush, bool vacuum, bool sideBrush, std::function<void(bool)> callback) {
-    if (!active)
+    if (!active || disabling)
         return false;
 
     // Track how many motor commands need to complete.
@@ -204,6 +221,7 @@ void ManualCleanManager::tick() {
     // reset after 10s so the user can retry instead of being locked out forever.
     if (enabling && enablingStartMs > 0 && millis() - enablingStartMs >= 10000) {
         LOG("MANUAL", "Enable timeout — resetting enabling flag after 10s");
+        ++transitionId;
         enabling = false;
         enablingStartMs = 0;
     }
@@ -224,7 +242,7 @@ void ManualCleanManager::tick() {
     }
 
     // Client watchdog — stop wheels if frontend goes silent (any API request resets the timer)
-    unsigned long lastActivity = WebServer::lastApiActivity;
+    unsigned long lastActivity = navigationControlled ? navigationHeartbeatMs : WebServer::lastApiActivity;
     unsigned long now = millis();
     if (!watchdogStopped && lastActivity > 0 && now - lastActivity >= MANUAL_CLIENT_TIMEOUT_MS) {
         LOG("MANUAL", "Client watchdog: no API activity for %lu ms, stopping wheels",
@@ -240,8 +258,17 @@ void ManualCleanManager::pollBumpers() {
     // Safety polling uses HIGH priority to jump ahead of normal sensor polls
     serial.getDigitalSensors(
             [this](bool ok, const DigitalSensorData& d) {
-                if (!ok || !active)
+                if (!active)
                     return;
+                safetyKnown = ok && (!navigationControlled || d.navigationValid);
+                if (!safetyKnown) {
+                    if (navigationControlled) {
+                        navigationFault = true;
+                        stopWheels();
+                    }
+                    return;
+                }
+                safetyUpdatedMs = millis();
 
                 bool prevLift = wheelLifted;
                 bool prevFrontL = bumperFrontLeft;
@@ -286,8 +313,16 @@ void ManualCleanManager::pollBumpers() {
 void ManualCleanManager::pollStall() {
     serial.getMotors(
             [this](bool ok, const MotorData& m) {
-                if (!ok || !active || !wheelsMoving)
+                if (!active || !wheelsMoving)
                     return;
+                if (!ok || (navigationControlled && !m.navigationValid)) {
+                    if (navigationControlled) {
+                        navigationFault = true;
+                        stopWheels();
+                    }
+                    return;
+                }
+                motorUpdatedMs = millis();
 
                 // Wheel load percentage spikes when motors fight an obstacle.
                 // Either wheel exceeding the threshold counts as stalled.

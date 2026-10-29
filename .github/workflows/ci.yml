@@ -9,6 +9,14 @@ permissions:
   contents: read
 
 jobs:
+  navigation-tests:
+    name: Offline navigation tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Host tests and simulated routes (no robot)
+        run: SANITIZE=1 bash scripts/test_navigation.sh
+
   firmware-matrix:
     name: Resolve firmware matrix
     runs-on: ubuntu-latest

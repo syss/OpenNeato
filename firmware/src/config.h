@@ -6,6 +6,11 @@
 #define FIRMWARE_VERSION "0.0"
 #endif
 
+// Experimental, supervised waypoint trials only. Ordinary builds cannot start navigation.
+#ifndef OPENNEATO_EXPERIMENTAL_NAVIGATION
+#define OPENNEATO_EXPERIMENTAL_NAVIGATION 0
+#endif
+
 // Chip model — passed via build flag (-DCHIP_MODEL=...) from board section in platformio.ini
 #ifndef CHIP_MODEL
 #error "CHIP_MODEL must be defined (e.g. -DCHIP_MODEL=\\\"ESP32-C3\\\")"

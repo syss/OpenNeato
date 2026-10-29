@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <functional>
+#include <atomic>
 #include <vector>
 #include "config.h"
 #include "loop_task.h"
@@ -105,6 +106,7 @@ public:
     // When set, getState() patches uiState to "UIMGR_STATE_MANUALCLEANING"
     // since the robot reports TESTMODE during manual clean.
     void setManualCleanActive(bool active) { manualCleanActive = active; }
+    void setNavigationActive(bool active) { navigationActive.store(active); }
 
     // -- Logger hook ---------------------------------------------------------
 
@@ -136,6 +138,7 @@ private:
     std::vector<CommandEntry> queue;
     QueueState state = QUEUE_IDLE;
     bool manualCleanActive = false;
+    std::atomic<bool> navigationActive{false};
 
     // SetEvent security key (computed from robot serial number at boot)
     String sKey;

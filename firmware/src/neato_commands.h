@@ -98,6 +98,7 @@ struct VersionData : public JsonSerializable {
 };
 
 struct ChargerData : public JsonSerializable {
+    bool navigationValid = false; // Complete, numeric fuel and dock fields; not serialized.
     int fuelPercent = -1;
     bool batteryOverTemp = false;
     bool chargingActive = false;
@@ -133,6 +134,7 @@ struct BatteryWarrantyData : public JsonSerializable {
 };
 
 struct DigitalSensorData : public JsonSerializable {
+    bool navigationValid = false; // All eight bumper/wheel-lift bits present and valid; not serialized.
     bool dcJackIn = false;
     bool dustbinIn = false;
     bool leftWheelExtended = false;
@@ -148,6 +150,7 @@ struct DigitalSensorData : public JsonSerializable {
 };
 
 struct MotorData : public JsonSerializable {
+    bool navigationValid = false; // Both wheel load percentages present and valid; not serialized.
     int brushMaxPWM = 0;
     int brushRPM = 0;
     int brushMA = 0;

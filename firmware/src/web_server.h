@@ -19,12 +19,13 @@ class NotificationManager;
 class CleaningHistory;
 class WiFiManager;
 class Scheduler;
+class NavigationManager;
 
 class WebServer {
 public:
     WebServer(AsyncWebServer& server, NeatoSerial& neato, DataLogger& logger, SystemManager& sys, FirmwareManager& fw,
               SettingsManager& settings, ManualCleanManager& manual, NotificationManager& notif,
-              CleaningHistory& history, WiFiManager& wifi, Scheduler& scheduler);
+              CleaningHistory& history, WiFiManager& wifi, Scheduler& scheduler, NavigationManager& navigation);
     void begin();
 
     // Last time any API request was received (millis()). Any module can check
@@ -43,9 +44,11 @@ private:
     CleaningHistory& historyMgr;
     WiFiManager& wifiMgr;
     Scheduler& scheduler;
+    NavigationManager& navigation;
 
     void registerApiRoutes();
     void registerManualRoutes();
+    void registerNavigationRoutes();
     void registerLogRoutes();
     void registerSystemRoutes();
     void registerSettingsRoutes();

@@ -50,6 +50,21 @@ public:
     bool setMotors(bool brush, bool vacuum, bool sideBrush, std::function<void(bool)> callback);
 
     bool isActive() const { return active; }
+    bool isBusy() const { return active || enabling || disabling; }
+    bool isTransitioning() const { return enabling || disabling; }
+    bool navigationSafetyFresh() const {
+        return !navigationFault && safetyKnown && static_cast<uint32_t>(millis() - safetyUpdatedMs) <= 2000 &&
+               (!wheelsMoving || static_cast<uint32_t>(millis() - motorUpdatedMs) <= 2000);
+    }
+    bool navigationBlocked() const {
+        return wheelLifted || bumperFrontLeft || bumperFrontRight || bumperSideLeft || bumperSideRight || stallFront ||
+               stallRear;
+    }
+    void navigationHeartbeat() {
+        navigationControlled = true;
+        navigationHeartbeatMs = millis();
+    }
+    void releaseNavigationControl() { navigationControlled = false; }
 
     // Update motor/safety settings from SettingsManager. Called at boot and on change.
     void setStallThreshold(int pct) { stallLoadPct = pct; }
@@ -66,6 +81,13 @@ private:
     bool enabling = false; // Transition in progress (enable sequence)
     unsigned long enablingStartMs = 0; // millis() when enable() started (for timeout recovery)
     bool disabling = false; // Transition in progress (disable sequence)
+    uint32_t transitionId = 0; // Ignore setup callbacks after cancellation or timeout.
+    bool safetyKnown = false;
+    uint32_t safetyUpdatedMs = 0;
+    bool navigationControlled = false;
+    bool navigationFault = false;
+    uint32_t navigationHeartbeatMs = 0;
+    uint32_t motorUpdatedMs = 0;
 
     // Current motor state (to avoid redundant commands on toggle)
     bool brushOn = false;
