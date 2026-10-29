@@ -53,4 +53,4 @@
 - [x] Document experimental build, offline checks and future supervised hardware acceptance checks.
 - [x] Run host suite, frontend checks/build, firmware normal/experimental builds, formatting, static analysis and workflow validation.
 - [x] Obtain independent review and fix important findings with regression tests.
-- [ ] Publish the verified feature branch to the existing fork.
+- [x] Publish the verified feature branch to the existing fork.
